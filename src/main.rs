@@ -152,6 +152,10 @@ fn show_best_images(
     {
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
+
+        if d.window_should_close() {
+            return;
+        }
     }
 
     // rl.set_target_fps(60);
@@ -191,6 +195,10 @@ fn show_best_images(
             font_size,
             Color::WHITE.alpha(0.1),
         );
+
+        if d.window_should_close() {
+            return;
+        }
     }
 
     let total = best.len();
@@ -279,6 +287,10 @@ fn show_best_images(
                 font_size,
                 Color::WHITE.alpha(0.1),
             );
+
+            if d.window_should_close() {
+                return;
+            }
         }
     }
 
