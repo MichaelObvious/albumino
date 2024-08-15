@@ -499,7 +499,7 @@ void main()
         }
 
         if d.is_key_down(KeyboardKey::KEY_F3) {
-            d.draw_text(&format!("{}", d.get_fps()), 0, 0, 50, Color::WHITE);
+            d.draw_text(&format!("{} FPS; {:02}/{:02}", d.get_fps(), index+1, textures.len()), 0, 0, 50, Color::WHITE);
         }
     }
     
