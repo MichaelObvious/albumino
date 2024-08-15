@@ -7,7 +7,8 @@ use std::{
 
 use ffi::{
     GetMonitorWidth, GetRenderHeight, GetRenderWidth, ImageBlurGaussian, InitAudioDevice,
-    LoadMusicStream, PlayMusicStream, SetMusicVolume, SetTextureFilter, UpdateMusicStream,
+    LoadMusicStream, PlayMusicStream, SeekMusicStream, SetMusicVolume, SetTextureFilter,
+    StopMusicStream, UpdateMusicStream,
 };
 use image::{imageops::FilterType::Lanczos3, GenericImageView, ImageReader};
 use raylib::{ffi::TraceLogLevel, prelude::*};
@@ -139,7 +140,7 @@ fn show_best_images(
 
     let (mut rl, thread) = raylib::init()
         .size(720, 540)
-        .title("Paparazzi")
+        .title("Albumino")
         .fullscreen()
         .resizable()
         .vsync()
@@ -283,7 +284,6 @@ fn show_best_images(
 
     let textures = textures.into_iter().enumerate().collect::<Vec<_>>();
 
-
     let mut blur_shader = rl.load_shader_from_memory(
         &thread,
         None,
@@ -345,7 +345,9 @@ void main()
     let mut h;
 
     let mut start_time = rl.get_time();
+    let mut text_anim_start_time = rl.get_time();
     let mut started = false;
+    let mut already_played = false;
 
     while !rl.window_should_close() {
         (w, h) = unsafe { (GetRenderWidth(), GetRenderHeight()) };
@@ -353,6 +355,12 @@ void main()
             if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
                 started = true;
                 start_time = rl.get_time() - photo_time * 0.05 - rl.get_frame_time() as f64;
+                if let Some(music) = music {
+                    unsafe {
+                        SeekMusicStream(music, 0.0);
+                        PlayMusicStream(music);
+                    };
+                }
             }
 
             let mut d = rl.begin_drawing(&thread);
@@ -360,13 +368,28 @@ void main()
 
             let text = "Press SPACE to start";
             let text_width = d.measure_text(text, font_size);
+            let alpha1 = 0.0625 * -(d.get_time() - text_anim_start_time).cos() as f32 + 0.25;
+            let alpha2 = 0.0625 * -(d.get_time() - text_anim_start_time).cos() as f32 + 0.5 / 3.0;
+            let ease_in = 0.5 + -0.5 * ((d.get_time() - text_anim_start_time)*2.0).min(PI).cos() as f32;
             d.draw_text(
                 text,
                 w / 2 - text_width / 2,
                 h / 2 - font_size / 2,
                 font_size,
-                Color::WHITE.alpha(0.125 * d.get_time().sin() as f32 + 0.25),
+                Color::WHITE.alpha(alpha1 * ease_in),
             );
+
+            if already_played {
+                let text = "(or ESC to quit)";
+                let text_width = d.measure_text(text, font_size / 2);
+                d.draw_text(
+                    text,
+                    w / 2 - text_width / 2,
+                    h / 2 - font_size / 2 + font_size * 3 / 2,
+                    font_size / 2,
+                    Color::WHITE.alpha(alpha2 * ease_in),
+                );
+            }
 
             continue;
         }
@@ -377,8 +400,11 @@ void main()
         if index > textures.len() {
             if let Some(music) = music {
                 unsafe { SetMusicVolume(music, 0.0) };
+                unsafe { StopMusicStream(music) };
             }
-            break;
+            already_played = true;
+            text_anim_start_time = rl.get_time();
+            started = false;
         }
 
         if let Some(music) = music {
@@ -475,14 +501,11 @@ void main()
         if d.is_key_down(KeyboardKey::KEY_F3) {
             d.draw_text(&format!("{}", d.get_fps()), 0, 0, 50, Color::WHITE);
         }
-
-        d.draw_text(
-            &format!("{}/{}", index, textures.len() - 1),
-            0,
-            0,
-            font_size,
-            Color::RED,
-        );
+    }
+    
+    if let Some(music) = music {
+        unsafe { SetMusicVolume(music, 0.0) };
+        unsafe { StopMusicStream(music) };
     }
 }
 
