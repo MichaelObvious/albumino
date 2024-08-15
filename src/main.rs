@@ -72,7 +72,7 @@ fn blur_zoom(t: f32) -> f32 {
 }
 
 fn size_fade(t: f32) -> f32 {
-    let extra = 0.01;
+    let extra = 0.025;
     1.0 + extra * E.powf(-2.0 * t)
 }
 
