@@ -85,7 +85,7 @@ fn alpha_fade(t: f32) -> f32 {
 }
 
 fn size_cut(t: f32) -> f32 {
-    if t <= 1.0 {
+    if t > 0.0 && t <= 1.0 {
         1.0
     } else {
         0.0
@@ -97,7 +97,7 @@ fn blur_cut(_t: f32) -> f32 {
 }
 
 fn alpha_cut(t: f32) -> f32 {
-    if t <= 1.0 {
+    if t > 0.0 && t <= 1.0 {
         1.0
     } else {
         0.0
@@ -146,6 +146,8 @@ fn show_best_images(
         .log_level(TraceLogLevel::LOG_WARNING)
         .build();
 
+    let font_size = 50;
+
     {
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
@@ -172,6 +174,23 @@ fn show_best_images(
     //     let monitor_id = get_current_monitor();
     //     GetMonitorWidth(monitor_id).max(get_monitor_height(monitor_id))
     // } as f32;
+
+    {
+        let mut d = rl.begin_drawing(&thread);
+        d.clear_background(Color::BLACK);
+        let w = d.get_render_width();
+        let h = unsafe { GetRenderHeight() };
+
+        let text = "Loading";
+        let text_width = d.measure_text(text, font_size);
+        d.draw_text(
+            text,
+            w / 2 - text_width / 2,
+            h / 2 - font_size / 2,
+            font_size,
+            Color::WHITE.alpha(0.1),
+        );
+    }
 
     let total = best.len();
     for (i, path) in best.into_iter().enumerate() {
@@ -249,15 +268,21 @@ fn show_best_images(
                 height,
                 Color::WHITE.alpha(0.075),
             );
+
+            let text = "Loading";
+            let text_width = d.measure_text(text, font_size);
+            d.draw_text(
+                text,
+                w / 2 - text_width / 2,
+                h / 2 - font_size / 2,
+                font_size,
+                Color::WHITE.alpha(0.1),
+            );
         }
     }
 
     let textures = textures.into_iter().enumerate().collect::<Vec<_>>();
 
-    let mut w;
-    let mut h;
-
-    let start_time = rl.get_time() - photo_time * 0.05;
 
     let mut blur_shader = rl.load_shader_from_memory(
         &thread,
@@ -316,7 +341,36 @@ void main()
     let uniform_height = blur_shader.get_shader_location("height");
     let uniform_radius = blur_shader.get_shader_location("radius");
 
+    let mut w;
+    let mut h;
+
+    let mut start_time = rl.get_time();
+    let mut started = false;
+
     while !rl.window_should_close() {
+        (w, h) = unsafe { (GetRenderWidth(), GetRenderHeight()) };
+        if !started {
+            if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
+                started = true;
+                start_time = rl.get_time() - photo_time * 0.05 - rl.get_frame_time() as f64;
+            }
+
+            let mut d = rl.begin_drawing(&thread);
+            d.clear_background(Color::BLACK);
+
+            let text = "Press SPACE to start";
+            let text_width = d.measure_text(text, font_size);
+            d.draw_text(
+                text,
+                w / 2 - text_width / 2,
+                h / 2 - font_size / 2,
+                font_size,
+                Color::WHITE.alpha(0.125 * d.get_time().sin() as f32 + 0.25),
+            );
+
+            continue;
+        }
+
         let time = rl.get_time() - start_time;
         let index = (time / photo_time).floor() as usize;
 
@@ -346,7 +400,6 @@ void main()
             }
         }
 
-        (w, h) = unsafe { (GetRenderWidth(), GetRenderHeight()) };
         // let xs = [w as f32, h as f32, 20.0 as f32];
         // blur_shader.set_shader_value_v(uniform_size, &xs);
         blur_shader.set_shader_value(uniform_width, w as f32);
@@ -422,6 +475,14 @@ void main()
         if d.is_key_down(KeyboardKey::KEY_F3) {
             d.draw_text(&format!("{}", d.get_fps()), 0, 0, 50, Color::WHITE);
         }
+
+        d.draw_text(
+            &format!("{}/{}", index, textures.len() - 1),
+            0,
+            0,
+            font_size,
+            Color::RED,
+        );
     }
 }
 
