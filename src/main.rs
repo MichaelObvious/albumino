@@ -11,56 +11,115 @@ use ffi::{
 };
 use image::{imageops::FilterType::Lanczos3, GenericImageView, ImageReader};
 use raylib::{ffi::TraceLogLevel, prelude::*};
+use strum::EnumCount;
+use strum_macros::EnumCount;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, EnumCount)]
+enum Transition {
+    Zoom,
+    Fade,
+    #[default]
+    Cut,
+}
 
 fn sigmoid(x: f32) -> f32 {
     let t = 10.0 * x - 5.0;
     E.powf(t) / (E.powf(t) + 1.0)
 }
 
-fn size_ease_in(t: f32) -> f32 {
+fn z_size_ease_in(t: f32) -> f32 {
     let t = t * 25.0 - 0.01;
     1.025 * (1.0 - E.powf(-t) + 0.01)
 }
-fn size_ease_out(t: f32) -> f32 {
+fn z_size_ease_out(t: f32) -> f32 {
     let t = -t * 50.0 + 50.0;
     // let t = t * 10.0 - 9.5;
     let t2 = sigmoid(-t / 4.0);
-    (1.0 - t2) * E.powf(-t) + t2 * 15.0 + size_ease_in(0.5)
+    (1.0 - t2) * E.powf(-t) + t2 * 15.0 + z_size_ease_in(0.5)
     // (E.powf(-t) + ease_in(0.5)).min(10.0)
 }
 
-fn size_ease(t: f32) -> f32 {
+fn size_zoom(t: f32) -> f32 {
     return if t < 0.5 {
-        size_ease_in(t)
+        z_size_ease_in(t)
     } else {
-        size_ease_out(t)
+        z_size_ease_out(t)
     } + 0.05 * t;
 }
 
-fn alpha_ease_in(t: f32) -> f32 {
+fn z_alpha_ease_in(t: f32) -> f32 {
     let t = t * 50.0;
     1.0 - E.powf(-t) + 0.01
 }
 
-fn alpha_ease_out(t: f32) -> f32 {
-    let t = 1.0 - t + 2.0;
-    -E.powf(-t) + alpha_ease_in(1.0)
+fn z_alpha_ease_out(t: f32) -> f32 {
+    // let t = 1.0 - t + 2.0;
+    z_alpha_ease_in(1.0) - sigmoid((t - 1.0).max(0.0))
 }
 
-fn alpha_ease(t: f32) -> f32 {
+fn alpha_zoom(t: f32) -> f32 {
     if t < 1.0 {
-        alpha_ease_in(t)
+        z_alpha_ease_in(t)
     } else {
-        alpha_ease_out(t)
+        z_alpha_ease_out(t)
     }
 }
 
-fn blur_ease(t: f32) -> f32 {
+fn blur_zoom(t: f32) -> f32 {
     let t = -t * 25.0 + 25.0;
     E.powf(-t).min(250.0)
 }
 
-fn show_best_images(best: &Vec<&str>, song_path: Option<&String>, bpm: f64) {
+fn size_fade(t: f32) -> f32 {
+    let extra = 0.01;
+    1.0 + extra * E.powf(-2.0 * t)
+}
+
+fn blur_fade(_t: f32) -> f32 {
+    0.0
+}
+
+fn alpha_fade(t: f32) -> f32 {
+    sigmoid(2.5 * t) - sigmoid(2.5 * (t - 1.0).max(0.0))
+    // (5.0*t).min(1.0)
+}
+
+fn size_cut(t: f32) -> f32 {
+    if t <= 1.0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn blur_cut(_t: f32) -> f32 {
+    0.0
+}
+
+fn alpha_cut(t: f32) -> f32 {
+    if t <= 1.0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn get_transition_functions(
+    transition: Transition,
+) -> (fn(f32) -> f32, fn(f32) -> f32, fn(f32) -> f32) {
+    match transition {
+        Transition::Zoom => (size_zoom, alpha_zoom, blur_zoom),
+        Transition::Fade => (size_fade, alpha_fade, blur_fade),
+        Transition::Cut => (size_cut, alpha_cut, blur_cut),
+    }
+}
+
+fn show_best_images(
+    best: &Vec<&str>,
+    song_path: Option<&String>,
+    bpm: f64,
+    transition: Transition,
+) {
     let photo_time = 60.0 / bpm;
     // let mut a = Command::new("mpv")
     //     .args(best.iter())
@@ -75,6 +134,8 @@ fn show_best_images(best: &Vec<&str>, song_path: Option<&String>, bpm: f64) {
     //     a.wait().unwrap();
     //     b.kill().unwrap();
     // }
+
+    let (size, alpha, blur) = get_transition_functions(transition);
 
     let (mut rl, thread) = raylib::init()
         .size(720, 540)
@@ -186,7 +247,7 @@ fn show_best_images(best: &Vec<&str>, song_path: Option<&String>, bpm: f64) {
                 h - height,
                 (percentage * w as f32) as i32,
                 height,
-                Color::WHITE.alpha(0.05),
+                Color::WHITE.alpha(0.075),
             );
         }
     }
@@ -196,7 +257,7 @@ fn show_best_images(best: &Vec<&str>, song_path: Option<&String>, bpm: f64) {
     let mut w;
     let mut h;
 
-    let start_time = rl.get_time();
+    let start_time = rl.get_time() - photo_time * 0.05;
 
     let mut blur_shader = rl.load_shader_from_memory(
         &thread,
@@ -259,7 +320,7 @@ void main()
         let time = rl.get_time() - start_time;
         let index = (time / photo_time).floor() as usize;
 
-        if index >= textures.len() {
+        if index > textures.len() {
             if let Some(music) = music {
                 unsafe { SetMusicVolume(music, 0.0) };
             }
@@ -273,7 +334,7 @@ void main()
                     let t = (time / photo_time).fract();
                     let v = t;
                     SetMusicVolume(music, v as f32);
-                } else if index >= textures.len() - 1 {
+                } else if index == textures.len() - 1 {
                     let t = 1.0 - (time / photo_time).fract();
                     let v = t;
                     SetMusicVolume(music, v as f32);
@@ -299,8 +360,8 @@ void main()
             let w = w as f32;
             let h = h as f32;
             let t = ((time - *i as f64 * photo_time) / photo_time).max(0.0) as f32;
-            let a = alpha_ease(t);
-            let b = blur_ease(t);
+            let a = alpha(t);
+            let b = blur(t);
             if a < 1e-6 {
                 continue;
             }
@@ -310,11 +371,11 @@ void main()
                 let scale_x = w / img_w;
                 let scale_y = h / img_h;
                 let scale = scale_x.max(scale_y);
-                let s = size_ease(t);
+                let s = size(t);
                 (s, s * scale, scale)
             };
 
-            if factor < 1.0 {
+            if factor < 1.0 && index < textures.len() {
                 let a = t * 2.0;
                 if a > 1e-4 && a <= 1.0 {
                     d.draw_texture_ex(
@@ -341,6 +402,11 @@ void main()
                     Color::WHITE.alpha(a),
                 );
             } else {
+                let a = if index >= textures.len() && transition == Transition::Zoom {
+                    a.powf(500.0)
+                } else {
+                    a
+                };
                 blur_shader.set_shader_value(uniform_radius, b);
                 let mut sd = d.begin_shader_mode(&blur_shader);
                 sd.draw_texture_ex(
@@ -362,17 +428,42 @@ void main()
 const DEFAULT_BPM: f64 = 12.0;
 
 fn main() {
-    let args = env::args().collect::<Vec<_>>();
+    let mut args = env::args();
+    args.next();
     // println!("{:?}", args);
-    let images_path = args.get(1).expect("No paths file provided.");
-    let music_path = args.get(2);
+    let images_path = args.next().expect("No paths file provided.");
+    let music_path = args.next();
     let bpm = args
-        .get(3)
+        .next()
         .map(|x| x.parse::<f64>().unwrap_or(DEFAULT_BPM))
         .unwrap_or(DEFAULT_BPM);
 
-    // println!("{} {:?} {}", images_path, music_path, bpm);
-    let contents = fs::read_to_string(images_path).expect("File provided does not exist");
+    let transition = args
+        .next()
+        .map(|x| {
+            assert!(Transition::COUNT == 3);
+            match x.as_str() {
+                "zoom" => Transition::Zoom,
+                "fade" => Transition::Fade,
+                "cut" => Transition::Cut,
+                _ => Transition::default(),
+            }
+        })
+        .unwrap_or_default();
+
+    let contents = fs::read_to_string(&images_path).expect("File provided does not exist");
     let best_images = contents.lines().collect::<Vec<_>>();
-    show_best_images(&best_images, music_path, bpm);
+
+    let mut info_messages = Vec::new();
+    info_messages.push(format!(
+        "Showing {} images in `{}`",
+        best_images.len(),
+        images_path
+    ));
+    if let Some(music_track) = &music_path {
+        info_messages.push(format!("playing music track `{}`", music_track));
+    }
+    info_messages.push(format!("at {} images per minute", bpm));
+    println!("[INFO] {}.", info_messages.join(", "));
+    show_best_images(&best_images, music_path.as_ref(), bpm, transition);
 }
