@@ -141,15 +141,26 @@ fn show_best_images(
     let (mut rl, thread) = raylib::init()
         .size(720, 540)
         .title("Albumino")
-        .fullscreen()
+        //.fullscreen()
         .resizable()
+        .undecorated()
         .vsync()
         .log_level(TraceLogLevel::LOG_WARNING)
         .build();
 
     let font_size = 50;
 
+    rl.set_target_fps(60);
+
     {
+        let monitor_id = get_current_monitor();
+        let (w, h) = unsafe { (GetMonitorWidth(monitor_id), get_monitor_height(monitor_id)) };
+
+        // println!("{} {}", w, h);
+        rl.set_window_size(w, h);
+
+        rl.toggle_fullscreen();
+
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
 
@@ -382,7 +393,8 @@ void main()
             let text_width = d.measure_text(text, font_size);
             let alpha1 = 0.0625 * -(d.get_time() - text_anim_start_time).cos() as f32 + 0.25;
             let alpha2 = 0.0625 * -(d.get_time() - text_anim_start_time).cos() as f32 + 0.5 / 3.0;
-            let ease_in = 0.5 + -0.5 * ((d.get_time() - text_anim_start_time)*2.0).min(PI).cos() as f32;
+            let ease_in =
+                0.5 + -0.5 * ((d.get_time() - text_anim_start_time) * 2.0).min(PI).cos() as f32;
             d.draw_text(
                 text,
                 w / 2 - text_width / 2,
@@ -511,10 +523,21 @@ void main()
         }
 
         if d.is_key_down(KeyboardKey::KEY_F3) {
-            d.draw_text(&format!("{} FPS; {:02}/{:02}", d.get_fps(), index+1, textures.len()), 0, 0, 50, Color::WHITE);
+            d.draw_text(
+                &format!(
+                    "{} FPS; {:02}/{:02}",
+                    d.get_fps(),
+                    index + 1,
+                    textures.len()
+                ),
+                0,
+                0,
+                50,
+                Color::WHITE,
+            );
         }
     }
-    
+
     if let Some(music) = music {
         unsafe { SetMusicVolume(music, 0.0) };
         unsafe { StopMusicStream(music) };
